@@ -1,0 +1,43 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.bedrock.titan.autoconfigure.BedrockTitanEmbeddingAutoConfiguration
+  application:
+    name: badrock
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vectorbad
+    username: testuser
+    password: testpwd
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+  ai:
+    model:
+      embedding: bedrock-cohere
+    bedrock:
+      aws:
+#        model-id: cohere.embed-english-v3   # 1536-dim embedding model
+
+#      converse:
+#        chat:
+#          enable: true
+#        options:
+#          model: amazon.nova-lite-v1:0
+      cohere:
+        embedding:
+          model: cohere.embed-english-v3
+          enabled: true
+    embedding:
+      default:
+        model: cohere.embed-english-v3  # embedding model
+        provider: bedrock
+    vector-store:
+      pgvector:
+        table-name: vectorbad
+        initialize-schema: true
+
+logging:
+  level:
+    org.springframework.ai: DEBUG
+
