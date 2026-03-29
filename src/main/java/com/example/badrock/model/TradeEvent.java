@@ -25,7 +25,9 @@ public class TradeEvent {
 
     private String tradeId;
     private String status; // NEW, VALIDATED, FAILED, RETRY, SETTLED
-    private String type;
+    private String actionType;
+    private String product;
+    private String extractionType;
     private String details;
 
     @Builder.Default

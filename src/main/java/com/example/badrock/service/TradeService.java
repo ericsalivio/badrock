@@ -14,13 +14,14 @@ public class TradeService {
     private final TradeEventRepository repo;
     private final ApplicationEventPublisher publisher;
 
-    public void createEvent(String tradeId, String status, String type, String details) {
+    public void createEvent(String tradeId, String status, String type, String product, String extractionType) {
 
         TradeEvent event = TradeEvent.builder()
                 .tradeId(tradeId)
                 .status(status)
-                .type(type)
-                .details(details)
+                .actionType(type)
+                .product(product)
+                .extractionType(extractionType)
                 .build();
 
         repo.save(event);

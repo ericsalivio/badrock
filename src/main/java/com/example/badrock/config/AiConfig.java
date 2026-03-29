@@ -40,15 +40,6 @@ public class AiConfig {
 
     @Bean
     public QuestionAnswerAdvisor questionAnswerAdvisor(VectorStore vectorStore) {
-//        var cohereEmbeddingApi =new CohereEmbeddingBedrockApi(
-//                CohereEmbeddingModel.COHERE_EMBED_MULTILINGUAL_V1.id(),
-//                EnvironmentVariableCredentialsProvider.create(), Region.US_EAST_1.id(), new JsonMapper());
-//
-//
-//        var embeddingModel = new BedrockCohereEmbeddingModel(this.cohereEmbeddingApi);
-//
-//        EmbeddingResponse embeddingResponse = this.embeddingModel
-//                .embedForResponse(List.of("Hello World", "World is big and salvation is near"));
         return QuestionAnswerAdvisor.builder(vectorStore).build();
     }
 }

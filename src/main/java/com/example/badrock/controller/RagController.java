@@ -2,6 +2,7 @@ package com.example.badrock.controller;
 
 import com.example.badrock.model.TradeAnswer;
 import com.example.badrock.service.TradeRagService;
+import com.example.badrock.tool.ReplayTradeTool;
 import com.example.badrock.tool.TradeContextTool;
 import com.example.badrock.tool.TradeLifecycleTool;
 import com.example.badrock.tool.TradeTools;
@@ -12,6 +13,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.PromptChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @RestController
@@ -32,10 +35,9 @@ public class RagController {
     private final TradeRagService ragService;
     private final ChatClient chatClient;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final VectorStore vectorStore;
-    private final TradeTools tradeTools;
     private final QuestionAnswerAdvisor questionAnswerAdvisor;
     private final TradeLifecycleTool tradeLifecycleTool;
+    private final ReplayTradeTool replayTradeTool;
 
     @GetMapping("/replayQueue")
     public List<Map<String, Object>> replay(@RequestParam String tradeId) throws Exception {
@@ -80,7 +82,6 @@ public class RagController {
             @RequestParam String user,
             @RequestParam String question) {
 
-
         // 🔹 Step 1: Get top 3 docs only
         String tradeId = question.replaceAll(".*?(TRX\\d+|T\\d+).*", "$1");
 
@@ -104,7 +105,7 @@ public class RagController {
         You can use tools:
         - getTradeLifecycleJson(tradeId, lastN)
         - getFailedSteps(tradeId)
-        - replayTrade(tradeId, mode, confirmed)
+        - replayTrade(tradeId, confirmed)
         
         Response rules:
         - Always answer the user clearly
@@ -115,10 +116,8 @@ public class RagController {
             - If lifecycle shown → suggest deeper inspection or replay
             - If status → suggest lifecycle
         
-        Replay safety rules:
-        - NEVER execute replay immediately
-        - Always require confirmation
-        - Suggest DRY_RUN first before FULL replay
+  
+      
         
         Be concise and natural.
         
@@ -127,9 +126,8 @@ public class RagController {
         return chatClient.prompt()
                 .system(systemPrompt)
                 .user(question)
-                .tools(tradeLifecycleTool)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, user).advisors(questionAnswerAdvisor)
-                )
+                .tools(replayTradeTool,tradeLifecycleTool)
+                .advisors(questionAnswerAdvisor)
                 .call()
                 .entity(TradeAnswer.class);
     }

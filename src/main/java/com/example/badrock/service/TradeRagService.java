@@ -19,21 +19,32 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TradeRagService {
 
+    private static final Map<String, String> ACTION_MEANING = Map.of(
+            "NEWT", "New trade reported for the first time",
+            "MODI", "Modification of an existing trade",
+            "CORR", "Correction of previously reported trade data",
+            "TERM", "Termination of an existing trade",
+            "EROR", "Cancellation of an incorrect or duplicate trade",
+            "REVI", "Revival of a previously terminated or cancelled trade",
+            "VALU", "Valuation update of a trade",
+            "MARU", "Margin or collateral update"
+    );
+
     private final VectorStore vectorStore;
     // Ingest event to VectorStore with rich embedding
     public void ingest(TradeEvent event){
         String text = String.format(
-                "TradeId:%s Type:%s Status:%s Details:%s Timestamp:%s",
+                "Trade lifecycle event. TradeId:%s Type:%s Status:%s Details:%s Timestamp:%s",
                 event.getTradeId(),
-                event.getType(),
+                event.getActionType(),
                 event.getStatus(),
-                event.getDetails(),
+                ACTION_MEANING.get(event.getActionType()),
                 event.getTimestamp()
         );
 
         Map<String,Object> metadata = Map.of(
                 "tradeId", event.getTradeId(),
-                "type", event.getType(),
+                "type", event.getActionType(),
                 "status", event.getStatus(),
                 "timestamp", event.getTimestamp().toString()
         );
