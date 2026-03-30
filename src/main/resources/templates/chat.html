@@ -3,94 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat</title>
+    <title>Chatty Chat</title>
 
+    <!-- Local Bootstrap CSS -->
     <link href="css/bootstrap.min.css" rel="stylesheet">
-    <script src="js/bootstrap.bundle.min.js"></script> <!-- Bootstrap 5 bundle, no jQuery needed -->
 
     <style>
-        body {
-            background-color: #f5f7fb;
-        }
-
-        .chat-container {
-            max-width: 800px;
-            margin: 30px auto;
-            border: 1px solid #ddd;
-            border-radius: 12px;
-            background: #ffffff;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            padding: 20px;
-        }
-
-        .chat-header {
-            border-bottom: 1px solid #eee;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-        }
-
-        .chat-header strong {
-            font-size: 18px;
-            color: #333;
-        }
-
-        .chat-messages {
-            height: 350px;
-            overflow-y: auto;
-            border: 1px solid #eee;
-            border-radius: 10px;
-            padding: 10px;
-            background: #fafafa;
-        }
-
-        .chat-message {
-            margin-bottom: 10px;
-            padding: 8px 12px;
-            border-radius: 12px;
-            max-width: 75%;
-            word-wrap: break-word;
-        }
-
-        .chat-message.user {
-            background-color: #e9f2ff;
-            align-self: flex-end;
-            margin-left: auto;
-        }
-
-        .chat-message.ai {
-            background-color: #f1f1f1;
-            color: #333;
-            align-self: flex-start;
-        }
-
-        .chat-message strong {
-            display: block;
-            font-weight: 600;
-        }
-
-        .chat-form {
-            margin-top: 15px;
-        }
-
-        .chat-input {
-            border-radius: 8px;
-        }
-
-        .send-btn {
-            border-radius: 8px;
-        }
-
-        .logout {
-            float: right;
-        }
-
-        .messages-container {
-            display: flex;
-            flex-direction: column;
-        }
+        body { background-color: #f5f7fb; }
+        .chat-container { max-width: 800px; margin: 30px auto; border: 1px solid #ddd; border-radius: 12px; background: #fff; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .chat-header { border-bottom: 1px solid #eee; margin-bottom: 15px; padding-bottom: 10px; }
+        .chat-header strong { font-size: 18px; color: #333; }
+        .chat-messages { height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 10px; padding: 10px; background: #fafafa; }
+        .chat-message { margin-bottom: 10px; padding: 8px 12px; border-radius: 10px; background-color: #e9f2ff; }
+        .chat-message.ai { background-color: #f1f0f0; }
+        .chat-message strong { color: #0d6efd; }
+        .chat-form { margin-top: 15px; }
+        .chat-input { border-radius: 8px; }
+        .send-btn { border-radius: 8px; }
+        .logout { float: right; }
     </style>
 </head>
-
 <body>
 
 <div class="chat-container">
@@ -102,54 +34,85 @@
     </div>
 
     <!-- Messages -->
-    <div class="chat-messages messages-container" id="chatMessages">
-        <div th:each="chatMessage : ${chatMessages}"
-             th:classappend="${chatMessage.username == 'AI'} ? 'ai' : 'user'"
-             class="chat-message">
-            <strong th:text="${chatMessage.username}">User</strong>
-            <span th:text="${chatMessage.messageText}">Hello</span>
-        </div>
-    </div>
+    <div class="chat-messages" id="chatMessages"></div>
 
     <!-- Form -->
-    <form class="chat-form" action="#" method="POST" th:action="@{/chat}" th:object="${chatForm}">
+    <form id="chatForm" class="chat-form">
         <div class="row g-2">
-
-            <div class="col-md-6">
-                <input id="messageText"
-                       class="form-control chat-input"
-                       placeholder="Type your message..."
-                       th:field="*{messageText}" type="text">
+            <div class="col-md-9">
+                <input id="messageText" class="form-control chat-input" placeholder="Type your message..." type="text">
             </div>
-
             <div class="col-md-3">
-                <select id="messageType"
-                        class="form-select"
-                        th:field="*{messageType}">
-                    <option th:each="type : ${allMessageTypes}"
-                            th:text="${type}"
-                            th:value="${type}">
-                    </option>
-                </select>
+                <button id="sendBtn" class="btn btn-primary w-100 send-btn" type="submit">Send</button>
             </div>
-
-            <div class="col-md-3">
-                <button id="submit-button"
-                        class="btn btn-primary w-100 send-btn"
-                        type="submit">
-                    Send
-                </button>
-            </div>
-
         </div>
     </form>
 
 </div>
 
-<!-- Auto-scroll to bottom -->
+<!-- Local JS -->
+<script src="js/bootstrap.min.js"></script>
+<script src="js/eventsource-polyfill.js"></script>
+
 <script>
     const chatMessages = document.getElementById('chatMessages');
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    const form = document.getElementById('chatForm');
+    const input = document.getElementById('messageText');
+    const sendBtn = document.getElementById('sendBtn');
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (!message) return;
+
+        // Add user message
+        const userDiv = document.createElement('div');
+        userDiv.classList.add('chat-message', 'user');
+        userDiv.innerHTML = `<strong>You</strong>: ${message}`;
+        chatMessages.appendChild(userDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Disable input while AI typing
+        input.disabled = true;
+        sendBtn.disabled = true;
+
+        // Native EventSource with fallback
+        let evtSource;
+        if (window.EventSource) {
+            evtSource = new EventSource('/chat/stream-sse?message=' + encodeURIComponent(message));
+        } else if (window.EventSourcePolyfill) {
+            evtSource = new EventSourcePolyfill('/chat/stream-sse', {
+                method: 'POST',
+                body: JSON.stringify({ messageText: message }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } else {
+            alert("Your browser does not support EventSource");
+            input.disabled = false;
+            sendBtn.disabled = false;
+            return;
+        }
+
+        // AI message container
+        const aiDiv = document.createElement('div');
+        aiDiv.classList.add('chat-message', 'ai');
+        aiDiv.innerHTML = `<strong>AI</strong>: `;
+        chatMessages.appendChild(aiDiv);
+
+        evtSource.addEventListener('message', function(e) {
+            const chatMsg = JSON.parse(e.data);
+            aiDiv.innerHTML = `<strong>AI</strong>: ${chatMsg.messageText}`;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        });
+
+        evtSource.addEventListener('error', function() {
+            input.disabled = false;
+            sendBtn.disabled = false;
+            evtSource.close();
+        });
+
+        input.value = '';
+    });
 </script>
 
 </body>

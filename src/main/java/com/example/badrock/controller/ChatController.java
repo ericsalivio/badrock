@@ -15,6 +15,7 @@ import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvi
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.security.Principal;
 import java.util.ArrayList;
@@ -35,7 +36,7 @@ public class ChatController {
 
     @GetMapping
     public String getChatPage(ChatForm chatForm, Model model) {
-        ChatMessage newMessage = new ChatMessage(chatForm.getUsername(),chatForm.getMessageText());
+        ChatMessage newMessage = new ChatMessage(chatForm.getUsername(), chatForm.getMessageText());
         newMessage.setUsername(chatForm.getUsername());
         model.addAttribute("chatMessages", newMessage);
         return "chat";
@@ -55,7 +56,7 @@ public class ChatController {
 
     @PostMapping
     public String sendMessage(
-            ChatForm chatForm, Model model, Principal principal,HttpSession session
+            ChatForm chatForm, Model model, Principal principal, HttpSession session
     ) {
         // Get existing chat messages from session or create new list
         List<ChatMessage> chatMessages = (List<ChatMessage>) session.getAttribute("chatMessages");
@@ -81,38 +82,38 @@ public class ChatController {
         }
 
         String systemPrompt = """
-        You are a Trade Lifecycle Assistant,
-        but only respond with trade details if the user explicitly mentions a trade or trade ID.
-        If the user asks about themselves or unrelated topics,
-        respond naturally and politely without trade info.
-        
-        Trade Id:  %s
-        
-        You can use tools:
-        - getTradeLifecycleJson(tradeId, lastN)
-        - getFailedSteps(tradeId)
-        - replayTrade(tradeId, confirmed)
-        
-        Response rules:
-        - Always answer the user clearly
-        - Always include a helpful follow-up question
-        
-        Follow-up rules:
-            - If trade FAILED → suggest replay
-            - If lifecycle shown → suggest deeper inspection or replay
-            - If status → suggest lifecycle
-        
-  
-      
-        
-        Be concise and natural.
-        
-        """.formatted(tradeId);
+                You are a Trade Lifecycle Assistant,
+                but only respond with trade details if the user explicitly mentions a trade or trade ID.
+                If the user asks about themselves or unrelated topics,
+                respond naturally and politely without trade info.
+                
+                Trade Id:  %s
+                
+                You can use tools:
+                - getTradeLifecycleJson(tradeId, lastN)
+                - getFailedSteps(tradeId)
+                - replayTrade(tradeId, confirmed)
+                
+                Response rules:
+                - Always answer the user clearly
+                - Always include a helpful follow-up question
+                
+                Follow-up rules:
+                    - If trade FAILED → suggest replay
+                    - If lifecycle shown → suggest deeper inspection or replay
+                    - If status → suggest lifecycle
+                
+                
+                
+                
+                Be concise and natural.
+                
+                """.formatted(tradeId);
 
-        var response =  chatClient.prompt()
+        var response = chatClient.prompt()
                 .system(systemPrompt)
                 .user(question)
-                .tools(replayTradeTool,tradeLifecycleTool)
+                .tools(replayTradeTool, tradeLifecycleTool)
                 .advisors(questionAnswerAdvisor)
                 .call()
                 .entity(TradeAnswer.class);
@@ -127,28 +128,98 @@ public class ChatController {
         chatForm.setMessageText("");
         return "chat";
     }
-    public String extractJson(String raw) {
-        int start = raw.indexOf("[");      // start of JSON array
-        int end = raw.lastIndexOf("]");    // end of JSON array
 
-        if (start >= 0 && end > start) {
-            return raw.substring(start, end + 1);
-        }
+    // Streaming endpoint for EventSource (GET for native EventSource)
+    @GetMapping("/stream-sse")
+    public SseEmitter streamMessage(@RequestParam String message, Principal principal) {
+        SseEmitter emitter = new SseEmitter(0L);
+        List<ChatMessage> chatHistory = new ArrayList<>();// no timeout
+        new Thread(() -> {
+            try {
+                String username = principal != null ? principal.getName() : "Guest";
 
-        // fallback: try JSON object
-        start = raw.indexOf("{");
-        end = raw.lastIndexOf("}");
-        if (start >= 0 && end > start) {
-            return raw.substring(start, end + 1);
-        }
+                // 1️⃣ Send user message
+                ChatMessage userMsg = new ChatMessage("Thinking..", message);
+                chatHistory.add(userMsg);
+                emitter.send(SseEmitter.event()
+                        .name("message")
+                        .data(userMsg));
 
-        // if nothing found, return empty JSON array
-        return "[]";
+                String question = message;
+
+                // 🔹 Step 1: Get top 3 docs only
+
+                String tradeId = question.replaceAll(".*?(TRX\\d+|T\\d+).*", "$1");
+
+                if (tradeId.equals(question)) {
+                    // fallback: vector search
+                    List<String> ids = ragService.searchGlobal(question).stream()
+                            .map(d -> String.valueOf(d.getMetadata().get("tradeId")))
+                            .toList();
+
+                    tradeId = ids.isEmpty() ? "UNKNOWN" : ids.get(0);
+                }
+
+                String systemPrompt = """
+                        You are a Trade Lifecycle Assistant,
+                        but only respond with trade details if the user explicitly mentions a trade or trade ID.
+                        If the user asks about themselves or unrelated topics,
+                        respond naturally and politely without trade info.
+                        
+                        Trade Id:  %s
+                        
+                        You can use tools:
+                        - getTradeLifecycleJson(tradeId, lastN)
+                        - getFailedSteps(tradeId)
+                        - replayTrade(tradeId, confirmed)
+                        
+                        Response rules:
+                        - Always answer the user clearly
+                        - Always include a helpful follow-up question
+                        
+                        Follow-up rules:
+                            - If trade FAILED → suggest replay
+                            - If lifecycle shown → suggest deeper inspection or replay
+                            - If status → suggest lifecycle
+                        
+                        
+                        
+                        
+                        Be concise and natural.
+                        
+                        """.formatted(tradeId);
+
+                var response = chatClient.prompt()
+                        .system(systemPrompt)
+                        .user(question)
+                        .tools(replayTradeTool, tradeLifecycleTool)
+                        .advisors(questionAnswerAdvisor)
+                        .call()
+                        .entity(TradeAnswer.class);
+
+                ChatMessage aiMsg = new ChatMessage("", "");
+                chatHistory.add(aiMsg);
+                // 2️⃣ Simulate AI thinking & send character-by-character
+                String fullText = response.answer() + "\n Follow-up: " + response.followUpQuestion();
+
+                for (char c : fullText.toCharArray()) {
+                    aiMsg.setMessageText(aiMsg.getMessageText() + c);
+                    emitter.send(SseEmitter.event().name("message").data(aiMsg));
+                    Thread.sleep(20); // simulate typing
+                }
+
+                emitter.complete();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+        }).start();
+
+        return emitter;
     }
 
     @ModelAttribute("allMessageTypes")
-    public String[] allMessageTypes () {
-        return new String[] { "Say", "Shout", "Whisper" };
+    public String[] allMessageTypes() {
+        return new String[]{"Say", "Shout", "Whisper"};
     }
 
 }
