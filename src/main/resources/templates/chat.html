@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <script src="js/bootstrap.bundle.min.js"></script> <!-- Bootstrap 5 bundle, no jQuery needed -->
+
+    <style>
+        body {
+            background-color: #f5f7fb;
+        }
+
+        .chat-container {
+            max-width: 800px;
+            margin: 30px auto;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            background: #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        .chat-header {
+            border-bottom: 1px solid #eee;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+        }
+
+        .chat-header strong {
+            font-size: 18px;
+            color: #333;
+        }
+
+        .chat-messages {
+            height: 350px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            padding: 10px;
+            background: #fafafa;
+        }
+
+        .chat-message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            max-width: 75%;
+            word-wrap: break-word;
+        }
+
+        .chat-message.user {
+            background-color: #e9f2ff;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .chat-message.ai {
+            background-color: #f1f1f1;
+            color: #333;
+            align-self: flex-start;
+        }
+
+        .chat-message strong {
+            display: block;
+            font-weight: 600;
+        }
+
+        .chat-form {
+            margin-top: 15px;
+        }
+
+        .chat-input {
+            border-radius: 8px;
+        }
+
+        .send-btn {
+            border-radius: 8px;
+        }
+
+        .logout {
+            float: right;
+        }
+
+        .messages-container {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="chat-container">
+
+    <!-- Header -->
+    <div class="chat-header">
+        <strong>💬 Chatty Chat</strong>
+        <a class="logout text-danger" th:href="@{/logout}">Logout</a>
+    </div>
+
+    <!-- Messages -->
+    <div class="chat-messages messages-container" id="chatMessages">
+        <div th:each="chatMessage : ${chatMessages}"
+             th:classappend="${chatMessage.username == 'AI'} ? 'ai' : 'user'"
+             class="chat-message">
+            <strong th:text="${chatMessage.username}">User</strong>
+            <span th:text="${chatMessage.messageText}">Hello</span>
+        </div>
+    </div>
+
+    <!-- Form -->
+    <form class="chat-form" action="#" method="POST" th:action="@{/chat}" th:object="${chatForm}">
+        <div class="row g-2">
+
+            <div class="col-md-6">
+                <input id="messageText"
+                       class="form-control chat-input"
+                       placeholder="Type your message..."
+                       th:field="*{messageText}" type="text">
+            </div>
+
+            <div class="col-md-3">
+                <select id="messageType"
+                        class="form-select"
+                        th:field="*{messageType}">
+                    <option th:each="type : ${allMessageTypes}"
+                            th:text="${type}"
+                            th:value="${type}">
+                    </option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <button id="submit-button"
+                        class="btn btn-primary w-100 send-btn"
+                        type="submit">
+                    Send
+                </button>
+            </div>
+
+        </div>
+    </form>
+
+</div>
+
+<!-- Auto-scroll to bottom -->
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+</script>
+
+</body>
+</html>

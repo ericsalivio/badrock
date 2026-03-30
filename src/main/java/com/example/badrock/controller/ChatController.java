@@ -1,37 +1,29 @@
 package com.example.badrock.controller;
 
+import com.example.badrock.model.ChatForm;
 import com.example.badrock.model.ChatMessage;
 import com.example.badrock.model.TradeAnswer;
 import com.example.badrock.service.TradeRagService;
 import com.example.badrock.tool.ReplayTradeTool;
-import com.example.badrock.tool.TradeContextTool;
 import com.example.badrock.tool.TradeLifecycleTool;
-import com.example.badrock.tool.TradeTools;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.PromptChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
-@RestController
-@RequestMapping("/rag")
+@Controller
+@RequestMapping("/chat")
 @RequiredArgsConstructor
-public class RagController {
+public class ChatController {
 
     private final TradeRagService ragService;
     private final ChatClient chatClient;
@@ -41,50 +33,42 @@ public class RagController {
     private final TradeLifecycleTool tradeLifecycleTool;
     private final ReplayTradeTool replayTradeTool;
 
-    @GetMapping("/replayQueue")
-    public List<Map<String, Object>> replay(@RequestParam String tradeId) throws Exception {
-        List<Document> docs = ragService.search(tradeId,
-                List.of("NEWT", "MODI", "EROR", "TERM"),
-                "TO_SEND");
-
-        String context = docs.stream()
-                .map(Document::getText)
-                .collect(Collectors.joining("\n"));
-
-        String prompt = """
-                You are a system that outputs STRICT JSON ONLY.
-                Replay the trade lifecycle for trade %s with action types NEWT, MODI, EROR, TERM and status TO_SEND.
-                Only include the latest timestamp for each action type.
-                Output MUST be an array of objects with fields:
-                - actionType
-                - tradeId
-                - status
-                - timestamp
-                - details
-                Do not include explanations.
-                Context:
-                %s
-                """.formatted(tradeId, context);
-
-        String response = chatClient.prompt().user(prompt).call().content();
-        response = extractJson(response);
-
-        try {
-            return mapper.readValue(response, new TypeReference<>() {
-            });
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Collections.emptyList();
-        }
+    @GetMapping
+    public String getChatPage(ChatForm chatForm, Model model) {
+        ChatMessage newMessage = new ChatMessage(chatForm.getUsername(),chatForm.getMessageText());
+        newMessage.setUsername(chatForm.getUsername());
+        model.addAttribute("chatMessages", newMessage);
+        return "chat";
     }
+//
+//    // Load chat page
+//    @GetMapping
+//    public String chatPage(HttpSession session, Model model) {
+//        List<ChatMessage> chatMessages = (List<ChatMessage>) session.getAttribute("chatMessages");
+//        if (chatMessages == null) {
+//            chatMessages = new ArrayList<>();
+//            session.setAttribute("chatMessages", chatMessages);
+//        }
+//        model.addAttribute("chatMessages", chatMessages);
+//        return "chat";
+//    }
 
+    @PostMapping
+    public String sendMessage(
+            ChatForm chatForm, Model model, Principal principal,HttpSession session
+    ) {
+        // Get existing chat messages from session or create new list
+        List<ChatMessage> chatMessages = (List<ChatMessage>) session.getAttribute("chatMessages");
+        if (chatMessages == null) {
+            chatMessages = new ArrayList<>();
+        }
 
-    @GetMapping("/ask")
-    public TradeAnswer query(
-            @RequestParam String user,
-            @RequestParam String question) {
+        // Add user message
+        chatMessages.add(new ChatMessage(principal.getName(), chatForm.getMessageText()));
+        String question = chatForm.getMessageText();
 
         // 🔹 Step 1: Get top 3 docs only
+
         String tradeId = question.replaceAll(".*?(TRX\\d+|T\\d+).*", "$1");
 
         if (tradeId.equals(question)) {
@@ -125,15 +109,24 @@ public class RagController {
         
         """.formatted(tradeId);
 
-        return chatClient.prompt()
+        var response =  chatClient.prompt()
                 .system(systemPrompt)
                 .user(question)
                 .tools(replayTradeTool,tradeLifecycleTool)
-                .advisors(promptChatMemoryAdvisor,questionAnswerAdvisor)
+                .advisors(questionAnswerAdvisor)
                 .call()
                 .entity(TradeAnswer.class);
-    }
 
+        chatMessages.add(new ChatMessage("AI", response.answer()));           // main AI answer
+        chatMessages.add(new ChatMessage("AI", response.followUpQuestion())); // follow-up question
+
+        // Save updated chat history in session
+        session.setAttribute("chatMessages", chatMessages);
+        model.addAttribute("chatMessages", chatMessages);
+        // Clear input
+        chatForm.setMessageText("");
+        return "chat";
+    }
     public String extractJson(String raw) {
         int start = raw.indexOf("[");      // start of JSON array
         int end = raw.lastIndexOf("]");    // end of JSON array
@@ -152,4 +145,10 @@ public class RagController {
         // if nothing found, return empty JSON array
         return "[]";
     }
+
+    @ModelAttribute("allMessageTypes")
+    public String[] allMessageTypes () {
+        return new String[] { "Say", "Shout", "Whisper" };
+    }
+
 }
